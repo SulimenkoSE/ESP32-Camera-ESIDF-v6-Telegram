@@ -1,0 +1,24 @@
+{
+  "servers": {
+    "espressif-docs": {
+      "command": "npx",
+      "args": [
+        "-y", 
+        "@modelcontextprotocol/server-http", 
+        "https://espressif.com"
+      ]
+    },
+    "esp-idf-tools": {
+      "command": "eim",
+      "args": ["run", "idf.py", "mcp-server"]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@microsoft/mcp-server-playwright"]
+    }
+  }
+}

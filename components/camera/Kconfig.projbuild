@@ -1,0 +1,37 @@
+menu "Camera Configuration"
+
+        choice FRAMESIZE
+            bool "Select Frame Size"
+            default FRAMESIZE_VGA
+            help
+                Select Picture Frame Size.
+    
+            config FRAMESIZE_VGA
+                bool "Frame Size:640x480"
+            config FRAMESIZE_SVGA
+                bool "Frame Size:800x600"
+            config FRAMESIZE_XGA
+                bool "Frame Size:1024x768"
+            config FRAMESIZE_HD
+                bool "Frame Size:1280x720"
+            config FRAMESIZE_SXGA
+                bool "Frame Size:1280x1024"
+            config FRAMESIZE_UXGA
+                bool "Frame Size:1600x1200"
+        endchoice
+
+        config ENABLE_FLASH
+            bool "Enable Flash Light"
+            default n
+            help
+                Enable Flash Light.
+
+        config GPIO_FLASH
+            int "Flash GPIO number"
+            depends on ENABLE_FLASH
+            range 4 34
+            default 4
+            help
+                GPIO number (IOxx) to Button Input.
+                Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to Button.
+endmenu

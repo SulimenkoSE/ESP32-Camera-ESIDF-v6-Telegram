@@ -1,0 +1,44 @@
+menu "Telegramm Configuration"
+
+    config TELEGRAM_HOST
+        string "TELEGRAM HOST"
+        default "https://api.telegram.org"
+        help
+            Telegram host to connect to.
+
+    config TELEGRAM_SSL_PORT
+        int "TELEGRAM SSL PORT"
+        default 443
+        help
+            TELEGRAM SSL PORT to use.
+
+    config HANDLE_MESSAGES
+        int "HANDLE MESSAGES"
+        default 5
+        help
+            HANDLE MESSAGES is really inexistent.
+
+    config TOKEN
+        string "TELEGRAM TOKEN"
+        default "XXXXXXXXXX:XXEFbnGn2AUXXXjpUJk5wJF8LE_sEvYYXXXs"
+        help
+            Telegram TOKEN to connect to.
+
+    config CHAT_ID
+        string "CHAT ID"
+        default "3333333334"
+        help
+            Telegram CHAT ID to connect to.
+
+    config CHAT_ID1
+        string "CHAT ID1"
+        default "@SSSSS_S"
+        help
+            Telegram NAME CHAT ID to connect to.
+
+    config TIME_FOR_MESSAGES
+        int "TIME FOR MESSAGES"
+        default 1000
+        help
+            Time for Updates MESSAGES in ms.
+endmenu

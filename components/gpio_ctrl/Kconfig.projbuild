@@ -1,0 +1,7 @@
+menu "GPIO Controller component"
+
+config GPIO_CTRL_ENABLE
+	bool "Enable GPIO Controller component"
+	default y
+
+endmenu
