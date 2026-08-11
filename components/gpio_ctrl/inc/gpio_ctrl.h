@@ -12,6 +12,8 @@ esp_err_t gpio_ctrl_set_level(gpio_num_t pin, uint32_t level);
 esp_err_t gpio_ctrl_get_level(gpio_num_t pin, int *level);
 
 void init_gpio_interrupt(void);   
+void start_gpio_interrupt(gpio_num_t pin_GPIO);
+void stop_gpio_interrupt(gpio_num_t pin_GPIO);
 
 #ifdef __cplusplus
 }

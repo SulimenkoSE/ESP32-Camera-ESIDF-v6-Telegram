@@ -28,6 +28,7 @@
 #include "cJSON.h"  // Важливо: літера J має бути ВЕЛИКОЮ
 
 #include "camera_my.h"
+#include "gpio_ctrl.h"
 
 /*Telegram configuration*/
 #define TELEGRAM_HOST CONFIG_TELEGRAM_HOST         // "https://api.telegram.org"
@@ -284,22 +285,6 @@ void parse_telegram_updates(const char* json_str) {
                         
                         // Логіка обробки команд
                         if (strcmp(text->valuestring, "/photo") == 0) {                             //Для відправки фото в телеграм
-                            /* ESP_LOGI(TAG_PARSE, "Дія: робимо фото та надсилаємо в Telegram");
-                            // Безпечно кидаємо сповіщення в чергу з іншої таски!
-                            telegram_queue_msg_t msg;
-                            msg.type = TG_TYPE_PHOTO;
-                            msg.text_payload = NULL;       // Тексту немає
-                            msg.value = 0; // Не використовується для фото
-                            // ВІДПРАВЛЯЄМО В ЧЕРГИ
-                            //text_QueueSend("Чекайте...");
-                            if (xQueueSend(telegram_queue, &msg, pdMS_TO_TICKS(10)) != pdTRUE) {
-                                ESP_LOGE(TAG_PARSE, "Черга повна, повертаємо буфер камери"); 
-                                 // Тут free(msg.text_payload) робити НЕ треба, бо free(NULL) — це безпечна операція, 
-                                // але вона просто нічого не робить.
-                            }else{
-
-                                ESP_LOGE(TAG_PARSE,"Фото відправлено в чергу! Чекайте...");
-                            } */
                             photo_QueueSend();
                             ESP_LOGE(TAG_PARSE,"Фото відправлено в чергу! Чекайте...");
                         }
@@ -343,6 +328,7 @@ void parse_telegram_updates(const char* json_str) {
                                 set_alarm_val(1); // Змінюємо значення
                                 ESP_LOGI(TAG_PARSE, "Дія: Увимкнути сігналізацю");
                                 text_QueueSend("⚠️ УВАГА! Сігналізація в домі ввимкнена!");
+                                start_gpio_interrupt(CONFIG_SENSOR_GPIO);
                             }else{
                                 text_QueueSend("😁 Сігналізація вже працює!!!");
                             }
@@ -354,6 +340,7 @@ void parse_telegram_updates(const char* json_str) {
                                 set_alarm_val(0); // Змінюємо значення
                                 ESP_LOGI(TAG_PARSE, "Дія: Увимкнути сігналізацю");
                                 text_QueueSend("⚠️ УВАГА! Сігналізація в домі ввимкнена!");
+                                stop_gpio_interrupt(CONFIG_SENSOR_GPIO);
                             }else{
                                 text_QueueSend("😁 Сігналізація вже не працює!!!");
                             }

@@ -404,7 +404,7 @@ void sensor_task(void *pvParameters)
                 // Зчитуэмо порт
             //status_pin_sensor = gpio_get_level(CONFIG_SENSOR_GPIO);
             esp_err_t ret = gpio_ctrl_get_level(CONFIG_SENSOR_GPIO, &status_pin_sensor);
-            if (ret == ESP_OK) {
+            if (ret == ESP_OK) {get_alarm_val
                 // Успішно зчитано рівень GPIO
 #ifdef SENSOR_DEBUG
                 ESP_LOGE("SENSOR -> ", "PIN %d? status %d", CONFIG_SENSOR_GPIO, status_pin_sensor);
@@ -721,15 +721,16 @@ void app_main(void)
      vTaskDelay(pdMS_TO_TICKS(500)); // Додатково чекаємо 0.1 секунду для стабілізації камери
     
     // Запускаэмо сенсор
-/* #if defined(SENSOR)
+
     // Зчитуємо дані при старті системи
     alarm_val = read_alarm_val();
     ESP_LOGI(TAG, "--- СТАРТ СИСТЕМИ. Поточне значення alarm_val: %d ---", alarm_val);
 
-    xTaskCreatePinnedToCore(&sensor_task, "sensor_task", 3072, NULL, 3, NULL, 1);
-#endif */
-
     init_gpio_interrupt();
+    //якщо сигналізація вимкнена зупиняємо interrupt
+    if(alarm_val == 0){
+        stop_gpio_interrupt(CONFIG_SENSOR_GPIO);
+    }
     // Запускаємо задачу моніторингу з низьким пріоритетом
     xTaskCreate(&heap_monitor_task, "heap_monitor_task", 3072, NULL, 1, NULL); 
 }

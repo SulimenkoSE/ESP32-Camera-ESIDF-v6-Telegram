@@ -154,6 +154,18 @@ static void gpio_task_example(void* arg) {
     }
 }
 
+// ФУНКЦІЯ ДЛЯ ЗАПУСКУ ПЕРЕРИВАННЯ
+void start_gpio_interrupt(gpio_num_t pin_GPIO) {
+    gpio_isr_handler_add(pin_GPIO, gpio_isr_handler, (void*) pin_GPIO);
+    ESP_LOGI(TAG, "Переривання по GPIO%в ЗАПУЩЕНО", pin_GPIO);
+}
+
+// ФУНКЦІЯ ДЛЯ ПРИПИНЕННЯ ПЕРЕРИВАННЯ
+void stop_gpio_interrupt(gpio_num_t pin_GPIO) {
+    gpio_isr_handler_remove(pin_GPIO);
+    ESP_LOGI(TAG, "Переривання по GPIO%в ПРИПИНЕНО", pin_GPIO);
+}
+
 void init_gpio_interrupt(void) {
     // 1. Конфігурація GPIO
     gpio_config_t io_conf = {
