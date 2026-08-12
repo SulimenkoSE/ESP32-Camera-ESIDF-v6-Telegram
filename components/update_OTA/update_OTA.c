@@ -65,7 +65,7 @@ static void perform_https_ota(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
         esp_restart();
     } else {
-        ESP_LOGE(TAG, "Збій прошивки: %s. Перезапуск системи...", esp_err_to_name(ota_ret));
+        ESP_LOGE(TAG, "Збій прошивки: %s. Перезапуск системи почався...", esp_err_to_name(ota_ret));
         vTaskDelay(pdMS_TO_TICKS(2000));
         esp_restart();
     }
