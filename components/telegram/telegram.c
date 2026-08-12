@@ -29,6 +29,7 @@
 
 #include "camera_my.h"
 #include "gpio_ctrl.h"
+#include "update_OTA.h"
 
 /*Telegram configuration*/
 #define TELEGRAM_HOST CONFIG_TELEGRAM_HOST         // "https://api.telegram.org"
@@ -46,11 +47,13 @@ static const char *_URL_POST_PHOTO = "https://api.telegram.org/bot" TOKEN "/send
 /* TAGs for the system*/
 static const char *TAG = "HTTP_CLIENT Handler";
 static int32_t last_update_id = 0;
+volatile bool telegram_bot_paused = false;
 
 // Формуємо текст повідомлення (використовуємо \n для нових рядків)
 const char *text_start =     "Система успішно запущена!\n\n"
                              "Ось основні функції:\n\n"
                              "/status\n\n"
+                             "/update\n\n"
                              "/photo\n\n"
                              "/led_on\n\n"
                              "/led_off\n\n"
@@ -344,7 +347,24 @@ void parse_telegram_updates(const char* json_str) {
                             }else{
                                 text_QueueSend("😁 Сігналізація вже не працює!!!");
                             }
-                        }else{
+                        }
+                        else if (strcmp(text->valuestring, "/update") == 0) {// Перевіряємо, чи прийшла команда на оновлення
+                            // 1. Одразу надсилаємо підтвердження старту перевірки
+                            text_QueueSend("Отримано команду на апгрейд. Перевіряю GitHub... 🔄");
+                            
+                            // 2. Викликаємо модифіковану функцію
+                            bool is_latest = check_and_run_ota();
+                            
+                            // 3. Аналізуємо результат
+                            if (is_latest) {
+                                // Якщо повернулося true — плата не шилася, сповіщаємо користувача
+                                text_QueueSend("У вас вже встановлена найновіша версія прошивки! ✅");
+                            } else {
+                                // Якщо повернулося false і плата НЕ перезавантажилась — сталася помилка (наприклад, збій інтернету)
+                                text_QueueSend("Не вдалося виконати перевірку або оновлення. Перевірте логі чи підключення! ❌");
+                            }
+                        }
+                        else{
                             ESP_LOGW(TAG_PARSE, "Нерозпізнаний команд: %s", text->valuestring);
                             // Безпечно кидаємо сповіщення в чергу з іншої таски!
                             text_QueueSend(text->valuestring);
@@ -640,7 +660,15 @@ void telegram_queue_task(void *pvParameters) {
 void telegram_bot_task(void *pvParameters) {
 
     while(1) {
-        static char url[256]; 
+        static char url[256];
+        
+        // Якщо активовано режим оновлення — таска просто спить і не чіпає мережу
+        if (telegram_bot_paused) {
+            vTaskDelay(pdMS_TO_TICKS(5000)); // Спимо 5 секунд і перевіряємо знову
+            continue;
+        }
+
+        
         // Захоплюємо м'ютекс перед початком БУДЬ-ЯКИХ дій з мережею
         if (xSemaphoreTake(tg_http_mutex, portMAX_DELAY) == pdTRUE) {
             // Перевіряємо, чи клієнт ініціалізований

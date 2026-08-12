@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+#define INPUT_SIGNAL_GPIO    CONFIG_SENSOR_GPIO
+
 esp_err_t gpio_ctrl_init_pin(gpio_num_t pin, gpio_mode_t mode, gpio_pull_mode_t pull_up, gpio_pull_mode_t pull_down);
 esp_err_t gpio_ctrl_set_level(gpio_num_t pin, uint32_t level);
 esp_err_t gpio_ctrl_get_level(gpio_num_t pin, int *level);

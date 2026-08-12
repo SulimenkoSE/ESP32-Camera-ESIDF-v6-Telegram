@@ -20,7 +20,7 @@
 #  define GPIO_CTRL_HAVE_FILTER 0
 #endif
 
-#define INPUT_SIGNAL_GPIO    CONFIG_SENSOR_GPIO
+//#define INPUT_SIGNAL_GPIO    CONFIG_SENSOR_GPIO
 #define DEBOUNCE_TIME_US     50000 // 50 мілісекунд (в мікросекундах) для захисту від брязкіту
 
 static const char *TAG = "gpio_ctrl";
@@ -119,6 +119,11 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
 }
 
 // Задача, яка чекає на сигнал з черги та обробляє його
+/**
+ * @brief Задача, яка чекає на сигнал з черги та обробляє його
+ * @param gpio_evt_queue черга
+ * @return Робить фото при умові зміни статусу піна з 0 в 1
+ */
 static void gpio_task_example(void* arg) {
     uint32_t io_num;
     int last_status = 0;
@@ -154,18 +159,26 @@ static void gpio_task_example(void* arg) {
     }
 }
 
-// ФУНКЦІЯ ДЛЯ ЗАПУСКУ ПЕРЕРИВАННЯ
+
+/** 
+ *  @brief ФУНКЦІЯ ДЛЯ ЗАПУСКУ ПЕРЕРИВАННЯ на GPIO INPUT_SIGNAL_GPIO
+*/
 void start_gpio_interrupt(gpio_num_t pin_GPIO) {
     gpio_isr_handler_add(pin_GPIO, gpio_isr_handler, (void*) pin_GPIO);
     ESP_LOGI(TAG, "Переривання по GPIO%в ЗАПУЩЕНО", pin_GPIO);
 }
 
-// ФУНКЦІЯ ДЛЯ ПРИПИНЕННЯ ПЕРЕРИВАННЯ
+/** 
+ *  @brief ФУНКЦІЯ ДЛЯ ПРИПИНЕННЯ ПЕРЕРИВАННЯ на GPIO INPUT_SIGNAL_GPIO
+*/
 void stop_gpio_interrupt(gpio_num_t pin_GPIO) {
     gpio_isr_handler_remove(pin_GPIO);
     ESP_LOGI(TAG, "Переривання по GPIO%в ПРИПИНЕНО", pin_GPIO);
 }
 
+/** 
+ *  @brief Задача ініциалізації переривання на GPIO INPUT_SIGNAL_GPIO
+*/
 void init_gpio_interrupt(void) {
     // 1. Конфігурація GPIO
     gpio_config_t io_conf = {

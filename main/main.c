@@ -38,6 +38,8 @@
 
 #include "gpio_ctrl.h"
 
+#include "update_OTA.h"
+
 /* The examples use WiFi configuration that you can set via project configuration menu
 
    If you'd rather not, just change the below entries to strings with
@@ -581,6 +583,8 @@ void app_main(void)
     // Чекаємо стабільного підключення (імітація затримки)
     vTaskDelay(pdMS_TO_TICKS(5000));
 
+    validate_new_firmware();
+
 #ifdef DNS_TEST
     // Лише тепер міняємо DNS і робимо запит!
     //ip_addr_t my_dns;
@@ -607,7 +611,7 @@ void app_main(void)
     }   
 #endif    
     
-   // Запуск нашого інтелектуального алгоритму синхронізації
+   // Запуск нашого інтелектуального алгоритму синхронізації часу дати та роу
     time_utils_init_with_timeout();
 
     // Отримуємо загальний розмір доступної PSRAM
