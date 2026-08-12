@@ -385,78 +385,6 @@ void heap_monitor_task(void *pvParameters) {
 //#define SENSOR_DEBUG
 static QueueHandle_t action_queue = NULL;
 
-/**
- * @brief Фоновий таск для обробки сигналу від датчика руху
- * @param pvParameters Параметри задачі (не використовуються)
-
-void sensor_task(void *pvParameters)
-{
-    gpio_config_t pwdn_conf = {
-        .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = BIT64(CONFIG_SENSOR_GPIO)};
-    gpio_config(&pwdn_conf);
-    // Встановлюємо початковий стан (наприклад, LOW)
-
-    static int status_pin_sensor = 0;
-    static int old_status_pin_sensor = 2;
-
-    while (1)
-    {
-        if (alarm_val == 0 ){
-                // Зчитуэмо порт
-            //status_pin_sensor = gpio_get_level(CONFIG_SENSOR_GPIO);
-            esp_err_t ret = gpio_ctrl_get_level(CONFIG_SENSOR_GPIO, &status_pin_sensor);
-            if (ret == ESP_OK) {get_alarm_val
-                // Успішно зчитано рівень GPIO
-#ifdef SENSOR_DEBUG
-                ESP_LOGE("SENSOR -> ", "PIN %d? status %d", CONFIG_SENSOR_GPIO, status_pin_sensor);
-#endif
-                if (status_pin_sensor != old_status_pin_sensor){             //Статус пина зміннився тому працюємо далі
-                    // Змінюемо статус
-                    old_status_pin_sensor = status_pin_sensor;
-                    if (status_pin_sensor == 1)                                //Виявлено рух
-                    {
-                        old_status_pin_sensor = status_pin_sensor;
-                        // Безпечно кидаємо сповіщення в чергу з іншої таски!
-                        text_QueueSend("⚠️ УВАГА! Виявлено рух робимо фото!");
-
-                        ESP_LOGI("Sensor_task", "Виявлено рух робимо фото та надсилаємо в Telegram");
-                        // Безпечно кидаємо сповіщення в чергу з іншої таски!
-                        // telegram_queue_msg_t msg;
-                        //msg.type = TG_TYPE_PHOTO;
-                        //msg.text_payload = NULL;       // Тексту немає
-                        //msg.value = 0; // Не використовується для фото
-                        // ВІДПРАВЛЯЄМО В ЧЕРГИ
-                        //text_QueueSend("Чекайте...");
-                        //if (xQueueSend(telegram_queue, &msg, pdMS_TO_TICKS(10)) != pdTRUE) {
-                        //    ESP_LOGE("Sensor_task", "Черга повна, повертаємо буфер камери"); 
-                        //        // Тут free(msg.text_payload) робити НЕ треба, бо free(NULL) — це безпечна операція, 
-                            // але вона просто нічого не робить.
-                        //}else{
-
-                        //    ESP_LOGE("Sensor_task","Фото відправлено в чергу! Чекайте...");
-                        //}
-                        photo_QueueSend();
-    //#ifdef SENSOR_DEBUG
-                        ESP_LOGW("SENSOR -> ", "ON");
-    //#endif
-                    }
-                    else
-                    {
-    //#ifdef SENSOR_DEBUG
-                        ESP_LOGW("SENSOR -> ", "OFF");
-    //#endif
-                    }
-                }
-            } else {
-                ESP_LOGE("SENSOR", "Помилка зчитування GPIO: %s", esp_err_to_name(ret));
-                status_pin_sensor = -1; // Встановлюємо помилкове значення
-            }
-        }
-        vTaskDelay(2000);
-    }       
-} */
-
 // Функція для зчитування значення
 uint8_t get_alarm_val(void) {
     return alarm_val;
@@ -583,6 +511,7 @@ void app_main(void)
     // Чекаємо стабільного підключення (імітація затримки)
     vTaskDelay(pdMS_TO_TICKS(5000));
 
+    //Валідація встановденной версії прошивки
     validate_new_firmware();
 
 #ifdef DNS_TEST
