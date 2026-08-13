@@ -92,17 +92,83 @@ static const char *TAG = "wifi station";
 static int s_retry_num = 0;
 
 /***************************ПРОТОТИПИ*******************************/
+
+/**
+ * @brief Обробник подій Wi-Fi та IP
+ * @param arg Аргумент обробника
+ * @param event_base База подій (WIFI_EVENT або IP_EVENT)
+ * @param event_id Ідентифікатор події
+ * @param event_data Дані події
+ */
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data);
 
+/**
+ * @brief Ініціалізація Wi-Fi у режимі станції
+ */
 void wifi_init_sta(void);
-void process_sensor_data(void);
+
+/**
+ * @brief Обробляє дані датчика та виводить інформацію про синхронізацію часу
+ */
+ void process_sensor_data(void);
+
+/**
+ * @brief Основна логіка програми для перевірки часу
+ */
 void my_main_logic_task(void *pvParameters);
+
+/**
+ * @brief Перевіряє стан внутрішньої пам'яті (MALLOC_CAP_INTERNAL) і виводить інформацію в лог.
+ *        Універсальна функція, яка аналізує внутрішню RAM (смарт-пам'ять MALLOC_CAP_INTERNAL), 
+ * оскільки саме з неї виділяється пам'ять під HTTP-буфери
+ */
 void heap_monitor_task(void *pvParameters) ;
-void sensor_task(void *pvParameters);
+
+/**
+ * @brief Отримати значення які встановлено для сигналізації
+ * @return Значення сигналізації (0 або 1)
+ */
 uint8_t get_alarm_val(void) ;
+
+/**
+ * @brief Функція для зміни значення сигналізації
+ */
 void set_alarm_val(uint8_t new_val);
+
+/**
+ * @brief Reads alarm value from non-volatile storage
+ * @return Alarm value from NVS
+ */
 uint8_t read_alarm_val(void);
+
+/**
+ * @brief Записує значення сигналізації у енергонезалежну пам'ять
+ * @param new_val Нове значення сигналізації для запису
+ */
+void write_alarm_val(uint8_t new_val);
+
+/**
+ * @brief Ви можете вивести поточні DNS-сервери в консоль одразу після підключення до Wi-Fi
+ */
+void print_current_dns_servers(void);
+
+/**
+ * @brief Завдання для обробки черги дій
+ * @param pvParameters Параметри завдання
+ */
+void action_queue_task(void *pvParameters);
+
+ /**
+  * @brief Зчитування значення alarm_val з NVS пам'яті
+  * @return uint8_t - значення стану тривоги (0 або 1)
+  */
+ uint8_t read_alarm_val(void);
+
+/**
+ * @brief Функція для запису нового значення (приймає 0 або 1) з NVS
+ * @param new_val 
+ */
 void write_alarm_val(uint8_t new_val);
 /***************************ПРОТОТИПИ*******************************/
 
@@ -132,6 +198,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI("NET", "Маска (MK): " IPSTR, IP2STR(&event->ip_info.netmask));
     }
 }
+
 
 void wifi_init_sta(void)
 {
@@ -204,11 +271,7 @@ void wifi_init_sta(void)
     }
 }
 
-/*
-* Ви можете вивести поточні DNS-сервери в консоль одразу після підключення до Wi-Fi
-*/
-
-/*  void print_current_dns_servers(void) {
+void print_current_dns_servers(void) {
     for (uint8_t i = 0; i < DNS_MAX_SERVERS; i++) {
         const ip_addr_t *dns_ip = dns_getserver(i);
         if (ip_addr_isany(dns_ip)) {
@@ -217,7 +280,7 @@ void wifi_init_sta(void)
             ESP_LOGI("DNS_INFO", "DNS Слот %d: %s", i, ipaddr_ntoa(dns_ip));
         }
     }
-} */
+}
 
 #ifdef DNS_TEST
 
@@ -292,9 +355,6 @@ void test_ping(void) {
 
 #endif
 
-/**
- * @brief Обробляє дані від датчика 
- */
 void process_sensor_data(void) {
     char time_buf[32];
 
@@ -308,9 +368,6 @@ void process_sensor_data(void) {
     }
 }
 
-/**
- * @brief Основна логіка програми
- */
 void my_main_logic_task(void *pvParameters) {
     struct tm current_time;
 
@@ -333,10 +390,6 @@ void my_main_logic_task(void *pvParameters) {
 // фонова задача в app_main, яка почекає 5 хвилин, зробить замір, а потім буде повторювати його через 1 хвиилну
 static const char *TAG_MEM = "MEM_MONITOR";
 
-/**
- * @brief Перевіряє стан внутрішньої пам'яті (MALLOC_CAP_INTERNAL) і виводить інформацію в лог.
- * Універсальна функція, яка аналізує внутрішню RAM (смарт-пам'ять MALLOC_CAP_INTERNAL), оскільки саме з неї виділяється пам'ять під HTTP-буфери
- */
 void check_heap_status(void) {
     // 1. Загальна вільна пам'ять у кучі
     uint32_t free_heap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
@@ -358,10 +411,6 @@ void check_heap_status(void) {
     }
 }
 
-/**
- * @brief Фоновий таск, який чекає 5 хвилин після старту, робить замір пам'яті, а потім повторює його щохвилини.
- * Це дозволяє виявити витоки пам'яті (Memory Leak) на ранніх етапах роботи пристрою.   
- */
 void heap_monitor_task(void *pvParameters) {
     ESP_LOGI(TAG_MEM, "Моніторинг запущено. Перший замір буде через 5 хвилин...");
     
@@ -379,22 +428,17 @@ void heap_monitor_task(void *pvParameters) {
     }
 }
 
-// SENSOR_GPIO
-// Дозволяємл включати сенсор
-//#define SENSOR
-//#define SENSOR_DEBUG
-static QueueHandle_t action_queue = NULL;
-
-// Функція для зчитування значення
 uint8_t get_alarm_val(void) {
     return alarm_val;
 }
 
-// Функція для зміни значення
 void set_alarm_val(uint8_t new_val) {
     alarm_val = (new_val > 0) ? 1 : 0; 
     write_alarm_val(alarm_val);
 }
+
+static QueueHandle_t action_queue = NULL;
+
 
 void action_queue_task(void *pvParameters){   
     //static uint8_t status_pin = 0;
@@ -420,11 +464,8 @@ void action_queue_task(void *pvParameters){
         }
     }
 }
-/******************************************************************
- * Робота з NVS
- * Функція для зчитування значення при старті
- */
-uint8_t read_alarm_val(void) {
+/********************Робота з NVS***********************************/
+ uint8_t read_alarm_val(void) {
     nvs_handle_t my_handle;
     uint8_t alarm_val = 0; // Значення за замовчуванням
 
@@ -461,7 +502,6 @@ uint8_t read_alarm_val(void) {
     return alarm_val;
 }
 
-// Функція для запису значення (приймає 0 або 1)
 void write_alarm_val(uint8_t new_val) {
     nvs_handle_t my_handle_nvs;
 
