@@ -542,8 +542,74 @@ bool send_telegram_photo(const uint8_t *buf, size_t len) {
     return is_success;
 }
 
-/** @brief Task для обробки повідомлень Telegram
- *  @param pvParameters Параметри задачі
+
+/**
+ * @brief Відправляє відеофайл на сервер Telegram
+ * @param chat_id Ідентифікатор чату Telegram для отримання відео
+ * @param avi_data Вказівник на буфер з даними AVI відео
+ * @param avi_len Розмір AVI даних у байтах
+ */
+void send_video_to_telegram(const char* chat_id, uint8_t* avi_data, size_t avi_len) {
+    bool is_success = false;
+    ESP_LOGE("TG", "Нsend_telegram_video для відправки кадру!");
+    
+    // Перевіряємо, чи клієнт ініціалізований
+    if (global_tg_client == NULL) {
+        //if (!init_telegram_client()) return is_success;
+    }
+    ESP_LOGE("TG", "Пройшли перевірку global_tg_client!");
+
+    // Формуємо Multipart Boundary
+    const char *boundary = "----ESP32CAMBoundary";
+    char content_type[128];
+    snprintf(content_type, sizeof(content_type), "multipart/form-data; boundary=%s", boundary);
+    esp_http_client_set_header(global_tg_client, "Content-Type", content_type);
+
+    // Розрахунок заголовків форми
+    char header_chat_id[256];
+    snprintf(header_chat_id, sizeof(header_chat_id),
+             "--%s\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n%s\r\n", boundary, chat_id);
+
+    char header_file[256];
+    snprintf(header_file, sizeof(header_file),
+             "--%s\r\nContent-Disposition: form-data; name=\"video\"; filename=\"motion.avi\"\r\nContent-Type: video/x-msvideo\r\n\r\n", boundary);
+
+    char footer[64];
+    snprintf(footer, sizeof(footer), "\r\n--%s--\r\n", boundary);
+
+    // Загальна довжина POST-запиту
+    size_t total_length = strlen(header_chat_id) + strlen(header_file) + avi_len + strlen(footer);
+
+    // Відкриваємо з'єднання
+    esp_err_t err = esp_http_client_open(global_tg_client, total_length);
+    if (err == ESP_OK) {
+        // Послідовно пишемо дані в сокет
+        esp_http_client_write(global_tg_client, header_chat_id, strlen(header_chat_id));
+        esp_http_client_write(global_tg_client, header_file, strlen(header_file));
+        
+        // Передаємо великий шматок відео з PSRAM
+        esp_http_client_write(global_tg_client, (const char*)avi_data, avi_len);
+        
+        esp_http_client_write(global_tg_client, footer, strlen(footer));
+
+        // Очікуємо відповідь сервера
+        int status_code = esp_http_client_fetch_headers(global_tg_client);
+        if (status_code >= 200 && status_code < 300) {
+            ESP_LOGI("TG", "Відео успішно надіслано! Код: %d", status_code);
+        } else {
+            ESP_LOGE("TG", "Помилка Telegram API. Код: %d", status_code);
+        }
+    } else {
+        ESP_LOGE("TG", "Не вдалося відкрити HTTP-з'єднання");
+    }
+
+    esp_http_client_cleanup(global_tg_client);
+}
+
+
+/** 
+ * @brief Task для обробки повідомлень Telegram
+ * @param pvParameters Параметри задачі
  * Фонова задача-менеджер TelegramВона спить і прокидається лише тоді, 
  * коли в чергу щось падає. Одночасність виключена на рівні архітектур
  */

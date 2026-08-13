@@ -90,6 +90,17 @@ static camera_config_t camera_config = {
 
 };
 
+#define MAX_VIDEO_SIZE (3 * 1024 * 1024) // 3 Мегабайти під відео в PSRAM
+uint8_t *video_buffer = NULL;
+size_t current_video_len = 0;
+
+void init_video_buffer() {
+    video_buffer = (uint8_t *)heap_caps_malloc(MAX_VIDEO_SIZE, MALLOC_CAP_SPIRAM);
+    if (video_buffer == NULL) {
+        ESP_LOGE("BUFF", "Не вдалося виділити пам'ять у PSRAM!");
+    }
+}
+
 static const char *TAG = "Camera";
 
 void init_camera_power_pin(void)
@@ -118,6 +129,11 @@ esp_err_t camera_init(void)
         return err;
     }
     ESP_LOGI(TAG, "Камеру успішно ініціалізовано в PSRAM!");
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != NULL) {
+        s->set_vflip(s, 1);
+        s->set_hmirror(s, 0);
+    }
     return ESP_OK;
 }
 
