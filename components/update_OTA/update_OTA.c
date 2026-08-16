@@ -17,7 +17,7 @@
 static const char *TAG = "GITHUB_OTA";
 
 // Поточна версія прошивки у вашому коді
-#define CURRENT_VERSION "1.0.1"
+#define CURRENT_VERSION "1.0.2"
 
 // Посилання на GitHub (замініть ВАШ_НІК та ІМ'Я_РЕПОЗИТОРІЮ)
 #define GITHUB_VERSION_URL "https://raw.githubusercontent.com/SulimenkoSE/ESP32-Camera-ESIDF-v6-Telegram/main/version.txt"

@@ -25,6 +25,7 @@ typedef struct {
 typedef enum {
     TG_TYPE_TEXT,
     TG_TYPE_PHOTO,
+    TG_TYPE_VIDEO,
     TG_TYPE_LED
 } tg_msg_type_t;
 

@@ -56,6 +56,7 @@ const char *text_start =     "Система успішно запущена!\n\
                              "/status\n\n"
                              "/update\n\n"
                              "/photo\n\n"
+                             "/video\n\n"
                              "/led_on\n\n"
                              "/led_off\n\n"
                              "/alarm_on\n\n"
@@ -219,6 +220,31 @@ void photo_QueueSend(void) {
     } 
 }
 
+void video_QueueSend(void) {
+    
+    if (telegram_queue == NULL) {
+        ESP_LOGE("TG_QUEUE", "Помилка: Черга Telegram ще не створена!");
+        return;
+    }
+
+    // 1. Створюємо об'єкт повідомлення для черги
+    telegram_queue_msg_t msg;
+    msg.type = TG_TYPE_VIDEO;
+    msg.text_payload = NULL;
+    msg.value = 0; // Не використовується для для video
+
+    // ВІДПРАВЛЯЄМО В ЧЕРГИ обнулюємо усю чергу, бо фото може бути лише од  під час спрацювання сенсора
+   //xQueueReset(telegram_queue);
+    // Навсяк випадок
+
+    if (xQueueSend(telegram_queue, &msg, pdMS_TO_TICKS(10)) != pdTRUE) {
+        ESP_LOGE("Photo_QueueSend", "Черга повна..."); 
+    }else{
+
+        ESP_LOGE("Video_QueueSend","Фото відправлено в чергу! Чекайте...");
+    } 
+}
+
 void аction_QueueSend(tg_msg_type_t msg_type, uint8_t action_value) {
     
     if (action_queue == NULL) {
@@ -291,6 +317,10 @@ void parse_telegram_updates(const char* json_str) {
                         if (strcmp(text->valuestring, "/photo") == 0) {                             //Для відправки фото в телеграм
                             photo_QueueSend();
                             ESP_LOGE(TAG_PARSE,"Фото відправлено в чергу! Чекайте...");
+                        }
+                        else if (strcmp(text->valuestring, "/video") == 0) {                            //Для вмикання світлодіода
+                            video_QueueSend();
+                            ESP_LOGE(TAG_PARSE,"Відео відправлено в чергу! Чекайте...");
                         }
                         else if (strcmp(text->valuestring, "/led_on") == 0) {                            //Для вмикання світлодіода
                             ESP_LOGI(TAG_PARSE, "Дія: Ввімкнути світлod іод");
@@ -550,8 +580,8 @@ bool send_telegram_photo(const uint8_t *buf, size_t len) {
  * @param avi_data Вказівник на буфер з даними AVI відео
  * @param avi_len Розмір AVI даних у байтах 
  */
-void send_video_to_telegram(uint8_t* avi_data, size_t avi_len) { //const char* chat_id, 
-    bool is_success = false;
+void send_video_to_telegram(void){ //(uint8_t* avi_data, size_t avi_len) { //const char* chat_id, 
+    //bool is_success = false;
     
     // Отримуємо доступ до даних з сусіднього файлу через гетери
     int total_frames = get_video_frame_count();
@@ -630,45 +660,6 @@ void send_video_to_telegram(uint8_t* avi_data, size_t avi_len) { //const char* c
     esp_http_client_cleanup(global_tg_client);
      // Після успішної відправки — повністю очищаємо пам'ять буфера
     clear_video_buffer();
-
-     /*char header_chat_id[256];
-    snprintf(header_chat_id, sizeof(header_chat_id),
-             "--%s\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n%s\r\n", boundary, CHAT_ID);
-
-    char header_file[256];
-    snprintf(header_file, sizeof(header_file),
-             "--%s\r\nContent-Disposition: form-data; name=\"video\"; filename=\"motion.avi\"\r\nContent-Type: video/x-msvideo\r\n\r\n", boundary);
-
-    char footer[64];
-    snprintf(footer, sizeof(footer), "\r\n--%s--\r\n", boundary);
-
-    // Загальна довжина POST-запиту
-    size_t total_length = strlen(header_chat_id) + strlen(header_file) + avi_len + strlen(footer);
-
-    // Відкриваємо з'єднання
-    esp_err_t err = esp_http_client_open(global_tg_client, total_length);
-    if (err == ESP_OK) {
-        // Послідовно пишемо дані в сокет
-        esp_http_client_write(global_tg_client, header_chat_id, strlen(header_chat_id));
-        esp_http_client_write(global_tg_client, header_file, strlen(header_file));
-        
-        // Передаємо великий шматок відео з PSRAM
-        esp_http_client_write(global_tg_client, (const char*)avi_data, avi_len);
-        
-        esp_http_client_write(global_tg_client, footer, strlen(footer));
-
-        // Очікуємо відповідь сервера
-        int status_code = esp_http_client_fetch_headers(global_tg_client);
-        if (status_code >= 200 && status_code < 300) {
-            ESP_LOGI("TG", "Відео успішно надіслано! Код: %d", status_code);
-        } else {
-            ESP_LOGE("TG", "Помилка Telegram API. Код: %d", status_code);
-        }
-    } else {
-        ESP_LOGE("TG", "Не вдалося відкрити HTTP-з'єднання");
-    } 
-
-    esp_http_client_cleanup(global_tg_client);*/
 }
 
 
@@ -712,8 +703,8 @@ void telegram_queue_task(void *pvParameters) {
                 // Робимо фотку
                 // 1. Створюємо чистий локальний вказівник для цього конкретного кадру
                 // Намагаємося захопити м'ютекс перед КОЖНИМ запитом getUpdates
-                if (xSemaphoreTake(tg_http_mutex, portMAX_DELAY) == pdTRUE) {
-#ifdef Camera                 
+#ifdef Camera                
+                if (xSemaphoreTake(tg_http_mutex, portMAX_DELAY) == pdTRUE) {          
                     camera_fb_t *fb = NULL;
 
                     // 2. Робимо фотку прямо в локальний вказівник
@@ -745,6 +736,18 @@ void telegram_queue_task(void *pvParameters) {
                     // щоб таска з фото могла його перехопити
                     xSemaphoreGive(tg_http_mutex);
                 }
+#endif
+            }
+            else if (received_msg.type == TG_TYPE_VIDEO) {
+                // Робимо фотку
+                // 1. Створюємо чистий локальний вказівник для цього конкретного кадру
+                // Намагаємося захопити м'ютекс перед КОЖНИМ запитом getUpdates
+#ifdef Camera             
+            if (xSemaphoreTake(tg_http_mutex, portMAX_DELAY) == pdTRUE) {
+                 
+                    
+                xSemaphoreGive(tg_http_mutex);
+            }
 #endif
             }
             if (received_msg.type == TG_TYPE_LED) {
