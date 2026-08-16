@@ -9,3 +9,4 @@ dependencies:
     - if: target in [esp32p4, esp32h2]
   espressif/esp32-camera: '*'
   espressif/cjson: "^1.7.19"
+  espressif/esp_encrypted_img: "^2.7.1"

@@ -1,7 +1,6 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
   "C_Cpp.autocomplete": "default",
-  //"C_Cpp.enhancedColorization": "enabled",
   "idf.extensionActivationMode": "always",
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
@@ -13,7 +12,7 @@
   },
   "editor.quickSuggestions": {
     "other": "on",
-    "comments": "on", // Обов'язково має бути "on"
+    "comments": "on",
     "strings": "on"
   },
   "github.copilot.inlineSuggest.enable": true,

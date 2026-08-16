@@ -152,3 +152,44 @@ idf.py add-dependency "espressif/cjson"
     esp_wifi_connect() — безпосередній запуск процесу авторизації в мережі.
     
     Також допускається перемикання режимів енергозбереження «на льоту» після отримання події IP_EVENT_STA_GOT_IP, проте застосування на етапі ініціалізації гарантує відсутність затримок (Latency) із самого початку з'єднання.
+
+## Шифрування
+
+* Для створення ключа.
+    Ця команда миттєво створить у папці, де ви перебуваєте, файл ota_encryption_key.bin, який міститиме ідеальну послідовність випадкових байтів.
+    Відкрийте термінал у вашому VS Code і виконайте одну коротку команду:    
+    python -c "import os; open('ota_encryption_key.bin', 'wb').write(os.urandom(32))"
+    Потім перенести в main та налаштувати cmake:
+        idf_component_register(SRCS "main.c"                     # Ваші файли вихідного коду
+                                INCLUDE_DIRS "."                  # Шляхи до папок з include
+                                EMBED_BINARIES "ota_encryption_key.bin")  # <--- ДОДАЙТЕ ЦЕЙ РЯДОК
+
+* Генерація приватного ключа підпису. Якщо не використовувати то галку перед Enable hardware Secure Boot in bootloader ставити не протрібно
+    Відкрийте термінал ESP-IDF та виконайте команду залежно від вашого чипа:
+        - Для ESP32-S3 / S2 / C3 / C6 / H2 (Рекомендовано ECDSA):
+        espsecure.py generate_signing_key --version 2 --scheme ecdsa_p256 secure_boot_signing_key.pem
+        - Для базового ESP32 (або якщо потрібен RSA-3072):
+        espsecure.py generate_signing_key --version 2 --scheme rsa3072 secure_boot_signing_key.pem
+  
+
+    Для шифрування потрібно після компіляції виконати команду:
+
+    espsecure.py encrypt_flash_data --keyfile main/ota_encryption_key.bin --address 0x0 --output station_enc.bin build/station.bin
+
+*   Мій варіант
+    Якщо ви не хочете вручную випалювати eFuse блоки на кожній платі за допомогою консолі, перейдіть на стандартний для цієї бібліотеки механізм RSA-3072. 
+    Він налаштовується значно простіше і не потребує eFuse-команд.Крок 1. Перегенерація ключа в формат RSA (Замість .bin файлу).
+    Відкрийте термінал і створіть пару ключів через OpenSSL:bash# Створюємо приватний RSA-ключ (Він залишається на ПК та вшивається в плату):
+        openssl genrsa -out main/ota_private_key.pem 3072
+
+    Витягуємо публічний ключ (Ним ви будете шифрувати файли перед завантаженням на GitHub)
+        openssl rsa -in main/ota_private_key.pem -pubout -out main/ota_public_key.pem
+
+    Шифрування файла перед передачею на GITHUB
+    espsecure.py encrypt_flash_data --keyfile main/ota_public_key.pem --output station_enc.bin build/station.bin
+
+*    Встановлення OpenSSL (якщо його немає)Найпростіший спосіб встановити OpenSSL через стандартний менеджер пакетів Windows (winget).
+     Відкрийте PowerShell від імені Адміністратора.Виконайте команду:
+        powershellwinget install XP8BT8QV1DB0C5 --source winget
+
+        Змінні оточення... ДОДАТИ В path СТРОКУ C:\Program Files\Git\usr\bin

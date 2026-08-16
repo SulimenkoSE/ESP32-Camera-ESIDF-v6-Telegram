@@ -90,7 +90,11 @@ static camera_config_t camera_config = {
 
 };
 
-#define MAX_VIDEO_SIZE (3 * 1024 * 1024) // 3 Мегабайти під відео в PSRAM
+#define MAX_FRAMES 40 // ~4-5 секунд при 8 FPS
+static stored_frame_t video_buffer[MAX_FRAMES];
+static int frame_count = 0;
+
+/* #define MAX_VIDEO_SIZE (3 * 1024 * 1024) // 3 Мегабайти під відео в PSRAM
 uint8_t *video_buffer = NULL;
 size_t current_video_len = 0;
 
@@ -99,7 +103,7 @@ void init_video_buffer() {
     if (video_buffer == NULL) {
         ESP_LOGE("BUFF", "Не вдалося виділити пам'ять у PSRAM!");
     }
-}
+} */
 
 static const char *TAG = "Camera";
 
@@ -172,36 +176,60 @@ esp_err_t get_camera_capture(camera_fb_t **fb) {
     return ESP_OK;
 }
 
-/* void take_photo_and_send_to_telegram(void)
-{
-    ESP_LOGI(TAG, "Робимо знімок...");
-    camera_fb_t *fb = esp_camera_fb_get();
+// Реалізація гетерів для іншого файлу
+stored_frame_t* get_video_buffer(void) {
+    return video_buffer;
+}
 
-    if (!fb)
-    {
-        ESP_LOGE(TAG, "Не вдалося захопити кадр з камери");
-        return;
+int get_video_frame_count(void) {
+    return frame_count;
+}
+
+// Функція безпечного очищення пам'яті відео буфера
+void clear_video_buffer(void) {
+    for (int i = 0; i < frame_count; i++) {
+        if (video_buffer[i].buf != NULL) {
+            free(video_buffer[i].buf);
+            video_buffer[i].buf = NULL;
+        }
+        video_buffer[i].len = 0;
     }
+    frame_count = 0;
+    ESP_LOGI(TAG, "Буфер відео повністю очищено та звільнено.");
+}
 
-    // Надсилаємо фото, яке фізично зберігається в PSRAM
-    // Заповнюємо структуру черги
-    telegram_queue_msg_t msg;
-    msg.type = TG_TYPE_PHOTO; // Ваш enum для фото
-    msg.text_payload = NULL;       // Тексту немає
-    //msg.photo_buffer = fb->buf;    // Передаємо вказівник на сирий JPEG
-    //msg.photo_len = fb->len;       // Передаємо розмір
-    msg.fb = fb;                 // Передаємо структуру повністю
+// 1. Запис 5 секунд відео в пам'ять
+void record_mjpeg_to_ram(void) {
+    // Спочатку очищаємо старий буфер, якщо він не був очищений
+    clear_video_buffer(); 
+    frame_count = 0;
 
-    // ВІДПРАВЛЯЄМО В ЧЕРГУ
-    if (xQueueSend(telegram_queue, &msg, pdMS_TO_TICKS(10)) != pdTRUE) {
-        ESP_LOGE("CAM", "Черга повна, повертаємо буфер камери");
-        // Якщо черга повна, обов'язково звільняємо пам'ять відразу тут!
-        esp_camera_fb_return(fb); 
-    } else {
-        // УВАГА: Тут ми НЕ викликаємо esp_camera_fb_return(fb)!
-        // Пам'ять має залишатися зайнятою, поки таска Telegram не відправить фото.
+    ESP_LOGI(TAG, "Початок запису відео...");    
+    while (frame_count < MAX_FRAMES) {
+        camera_fb_t * fb = esp_camera_fb_get();
+        if (!fb) {
+            ESP_LOGE(TAG, "Помилка захоплення кадру");
+            continue;
+        }
+
+        // Виділяємо пам'ять у PSRAM під поточний кадр
+        video_buffer[frame_count].buf = (uint8_t*)heap_caps_malloc(fb->len, MALLOC_CAP_SPIRAM);
+        if (video_buffer[frame_count].buf) {
+            memcpy(video_buffer[frame_count].buf, fb->buf, fb->len);
+            video_buffer[frame_count].len = fb->len;
+            frame_count++;
+        } else {
+            ESP_LOGE(TAG, "Брак PSRAM для кадру %d", frame_count);
+            esp_camera_fb_return(fb);
+            break;
+        }
+        
+        esp_camera_fb_return(fb);
+        vTaskDelay(pdMS_TO_TICKS(120)); // Затримка для ~8 FPS
     }
-} */
+    ESP_LOGI(TAG, "Записано кадрів: %d", frame_count);
+}
+
 
 #if CONFIG_REMOTE_IS_VARIABLE_NAME
 void time_sync_notification_cb(struct timeval *tv)

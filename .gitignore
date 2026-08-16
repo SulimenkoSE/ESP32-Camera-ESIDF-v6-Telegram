@@ -76,3 +76,9 @@ Desktop.ini
 *.workspace # General workspace files, can be from various tools
 *.suo       # Visual Studio Solution User Options
 *.sln.docstates # Visual Studio
+
+# Ключі безпеки ESP32
+*.bin
+*.pem
+ota_encryption_key.bin
+secure_boot_signing_key.pem

@@ -119,6 +119,11 @@ void wifi_init_sta(void);
 void my_main_logic_task(void *pvParameters);
 
 /**
+ * @brief Перевіряє стан PSRAM і виводить інформацію про використання пам'яті
+ */
+void check_psram_status(); 
+
+/**
  * @brief Перевіряє стан внутрішньої пам'яті (MALLOC_CAP_INTERNAL) і виводить інформацію в лог.
  *        Універсальна функція, яка аналізує внутрішню RAM (смарт-пам'ять MALLOC_CAP_INTERNAL), 
  * оскільки саме з неї виділяється пам'ять під HTTP-буфери
@@ -704,6 +709,29 @@ void app_main(void)
     if(alarm_val == 0){
         stop_gpio_interrupt(CONFIG_SENSOR_GPIO);
     }
+
+    
+    void check_psram_status() {
+    // 1. Отримуємо загальний розмір PSRAM, який бачить система
+    size_t total_psram = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    
+    // 2. Отримуємо кількість вільної пам'яті в PSRAM прямо зараз
+    size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    
+    // 3. Рахуємо, скільки вже зайнято
+    size_t used_psram = total_psram - free_psram;
+    
+    // 4. Додатково: дізнаємося розмір найбільшого суцільного шматка (важливо для malloc)
+    size_t max_chunk = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+
+    ESP_LOGI("MEMORY", "=== СТАН PSRAM ===");
+    ESP_LOGI("MEMORY", "Загалом:   %d КБ", total_psram / 1024);
+    ESP_LOGI("MEMORY", "Зайнято:   %d КБ", used_psram / 1024);
+    ESP_LOGI("MEMORY", "Вільно:    %d КБ", free_psram / 1024);
+    ESP_LOGI("MEMORY", "Макс. блок: %d КБ (найбільший суцільний шматок)", max_chunk / 1024);
+    ESP_LOGI("MEMORY", "=================");
+}
+
     // Запускаємо задачу моніторингу з низьким пріоритетом
     xTaskCreate(&heap_monitor_task, "heap_monitor_task", 3072, NULL, 1, NULL); 
 }

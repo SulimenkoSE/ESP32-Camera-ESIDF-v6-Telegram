@@ -23,6 +23,22 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 2.1.7
+  espressif/esp_encrypted_img:
+    component_hash: c04b8f14c45a836b4f9f8dc6e7767a5adc034f00492354423053e042c5aeb342
+    dependencies:
+    - name: espressif/esp_secure_cert_mgr
+      registry_url: https://components.espressif.com
+      require: private
+      rules:
+      - if: idf_version >= 5.3
+      version: '>=2.5.1'
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.7.1
   espressif/esp_jpeg:
     component_hash: defb83669293cbf86d0fa86b475ba5517aceed04ed70db435388c151ab37b5d7
     dependencies:
@@ -33,6 +49,16 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.3.1
+  espressif/esp_secure_cert_mgr:
+    component_hash: 0b83e150f48d6839f0a0a8753850be55a51cc298cfca7658f21d355d5f41dd67
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.3'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 2.9.3
   idf:
     source:
       type: idf
@@ -40,6 +66,7 @@ dependencies:
 direct_dependencies:
 - espressif/cjson
 - espressif/esp32-camera
-manifest_hash: 93d670cbd43beffc8d28a7e19013d43b9b6747d397a7896583f8a31737d99733
+- espressif/esp_encrypted_img
+manifest_hash: 14d345dee905ab90558518576bc7ab9d2b5d697899521f5981a38b48cb438914
 target: esp32
 version: 3.0.0

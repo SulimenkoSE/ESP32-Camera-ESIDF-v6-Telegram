@@ -43,6 +43,7 @@
 static const char *_URL_OFFSET = "https://api.telegram.org/bot" TOKEN "/getUpdates?offset=%d";
 static const char *_URL_POST_MESSAGE = "https://api.telegram.org/bot" TOKEN "/sendMessage";
 static const char *_URL_POST_PHOTO = "https://api.telegram.org/bot" TOKEN "/sendPhoto";
+static const char *_URL_POST_VIDEO = "https://api.telegram.org/bot" TOKEN "/sendDocument";
 
 /* TAGs for the system*/
 static const char *TAG = "HTTP_CLIENT Handler";
@@ -145,7 +146,7 @@ bool init_telegram_client(void) {
         .transport_type = HTTP_TRANSPORT_OVER_SSL,
         .skip_cert_common_name_check = false,
         .use_global_ca_store = false,
-        .timeout_ms = 15000, // Для Keep-Alive 5 секунд більше ніж достатньо
+        .timeout_ms = 20000, // Для Keep-Alive 5 секунд більше ніж достатньо  але при відправці відео необхідно 20с
         .crt_bundle_attach = esp_crt_bundle_attach,
         .event_handler = _http_event_handler,
         .keep_alive_enable = true, // Тепер це РЕАЛЬНО буде працювати
@@ -547,28 +548,92 @@ bool send_telegram_photo(const uint8_t *buf, size_t len) {
  * @brief Відправляє відеофайл на сервер Telegram
  * @param chat_id Ідентифікатор чату Telegram для отримання відео
  * @param avi_data Вказівник на буфер з даними AVI відео
- * @param avi_len Розмір AVI даних у байтах
+ * @param avi_len Розмір AVI даних у байтах 
  */
-void send_video_to_telegram(const char* chat_id, uint8_t* avi_data, size_t avi_len) {
+void send_video_to_telegram(uint8_t* avi_data, size_t avi_len) { //const char* chat_id, 
     bool is_success = false;
-    ESP_LOGE("TG", "Нsend_telegram_video для відправки кадру!");
+    
+    // Отримуємо доступ до даних з сусіднього файлу через гетери
+    int total_frames = get_video_frame_count();
+    stored_frame_t* buffer = get_video_buffer();
+
+    if (total_frames == 0) {
+        ESP_LOGW(TAG, "Немає кадрів для відправки");
+        return;
+    }
+    ESP_LOGE("TG", "Send_telegram_video для відправки кадру!");
     
     // Перевіряємо, чи клієнт ініціалізований
     if (global_tg_client == NULL) {
-        //if (!init_telegram_client()) return is_success;
+        if (!init_telegram_client()) return;// is_success;
     }
     ESP_LOGE("TG", "Пройшли перевірку global_tg_client!");
 
+    //Оновлюємо global_tg_client
+    esp_http_client_set_url(global_tg_client, _URL_POST_VIDEO);
+    esp_http_client_set_method(global_tg_client, HTTP_METHOD_POST);
+
+
     // Формуємо Multipart Boundary
     const char *boundary = "----ESP32CAMBoundary";
-    char content_type[128];
-    snprintf(content_type, sizeof(content_type), "multipart/form-data; boundary=%s", boundary);
-    esp_http_client_set_header(global_tg_client, "Content-Type", content_type);
+    char header[128];
+    snprintf(header, sizeof(header), "multipart/form-data; boundary=%s", boundary);
+    esp_http_client_set_header(global_tg_client, "Content-Type", header);
 
     // Розрахунок заголовків форми
-    char header_chat_id[256];
+    // Розрахунок загального розміру контенту (всі кадри разом)
+    size_t total_video_size = 0;
+    for (int i = 0; i < total_frames; i++) {
+        total_video_size += buffer[i].len;
+    }
+     char body_start[512];
+    int start_len = snprintf(body_start, sizeof(body_start),
+        "--%s\r\n"
+        "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n%s\r\n"
+        "--%s\r\n"
+        "Content-Disposition: form-data; name=\"document\"; filename=\"motion.mjpeg\"\r\n"
+        "Content-Type: video/x-mjpeg\r\n\r\n", boundary, CHAT_ID, boundary);
+
+    char body_end[128];
+    int end_len = snprintf(body_end, sizeof(body_end), "\r\n--%s--\r\n", boundary);
+
+    size_t total_data_length = start_len + total_video_size + end_len;
+    
+    // Відкриваємо з'єднання HTTP-сесію
+    esp_err_t err = esp_http_client_open(global_tg_client, total_data_length);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Помилка відкриття з'єднання: %s", esp_err_to_name(err));
+        // КРИТИЧНО: Якщо з'єднання не відкрилося, очищаємо пам'ять через спільну функцію!
+        clear_video_buffer();
+        return;
+    }
+
+    // Надсилаємо текстові поля та заголовок файлу стартову частину Multipart
+    esp_http_client_write(global_tg_client, body_start, start_len);
+
+    // Послідовно викачуємо всі кадри з PSRAM в сокет
+    for (int i = 0; i < total_frames; i++) {
+        esp_http_client_write(global_tg_client, (const char*)buffer[i].buf, buffer[i].len);
+    }
+
+    // Закриваємо multipart
+    esp_http_client_write(global_tg_client, body_end, end_len);
+
+    // Отримуємо відповідь
+    int status_code = esp_http_client_fetch_headers(global_tg_client);
+    if (status_code >= 200 && status_code < 300) {
+        ESP_LOGI(TAG, "Відео успішно надіслано! Код: %d", status_code);
+    } else {
+        ESP_LOGE(TAG, "Невдала відправка. Код відповіді: %d", status_code);
+    }
+
+    esp_http_client_cleanup(global_tg_client);
+     // Після успішної відправки — повністю очищаємо пам'ять буфера
+    clear_video_buffer();
+
+     /*char header_chat_id[256];
     snprintf(header_chat_id, sizeof(header_chat_id),
-             "--%s\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n%s\r\n", boundary, chat_id);
+             "--%s\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n%s\r\n", boundary, CHAT_ID);
 
     char header_file[256];
     snprintf(header_file, sizeof(header_file),
@@ -601,9 +666,9 @@ void send_video_to_telegram(const char* chat_id, uint8_t* avi_data, size_t avi_l
         }
     } else {
         ESP_LOGE("TG", "Не вдалося відкрити HTTP-з'єднання");
-    }
+    } 
 
-    esp_http_client_cleanup(global_tg_client);
+    esp_http_client_cleanup(global_tg_client);*/
 }
 
 
