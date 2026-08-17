@@ -478,9 +478,70 @@ void send_telegram_message(const char* text) {
  * @brief Функція для відправки фото в Telegram
  */
 
+ esp_err_t send_photo_to_telegram(camera_fb_t *fb) {
+    
+    if (!fb) return ESP_ERR_INVALID_ARG;
+
+    // Перевіряємо, чи клієнт ініціалізований
+    if (global_tg_client == NULL) {
+        if (!init_telegram_client()) return ESP_FAIL;
+    }
+    ESP_LOGE("TG", "Пройшли перевірку global_tg_client!");
+
+    // Створення унікального розділювача (Boundary)
+    const char *boundary = "----ESP32CameraBoundary";
+    char header_content_type[128];
+    snprintf(header_content_type, sizeof(header_content_type), "multipart/form-data; boundary=%s", boundary);
+    esp_http_client_set_header(global_tg_client, "Content-Type", header_content_type);
+
+    // Формування текстової частини (chat_id) та початку секції файлу
+    char body_start[512];
+    int body_start_len = snprintf(body_start, sizeof(body_start),
+        "--%s\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n" CHAT_ID "\r\n"
+        "--%s\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"cam_02.jpg\"\r\n"
+        "Content-Type: image/jpeg\r\n\r\n", boundary, boundary);
+
+    // Формування кінця запиту
+    char body_end[128];
+    int body_end_len = snprintf(body_end, sizeof(body_end), "\r\n--%s--\r\n", boundary);
+
+    // Рахуємо повний об'єм даних, який буде відправлено
+    int total_length = body_start_len + fb->len + body_end_len;
+    char content_length_str[16];
+    snprintf(content_length_str, sizeof(content_length_str), "%d", total_length);
+    esp_http_client_set_header(global_tg_client, "Content-Length", content_length_str);
+
+    // Відкриваємо з'єднання та покроково відправляємо дані (стримінг)
+    esp_err_t err = esp_http_client_open(global_tg_client, total_length);
+    if (err == ESP_OK) {
+        // 1. Відправляємо текстову частину
+        esp_http_client_write(global_tg_client, body_start, body_start_len);
+        // 2. Відправляємо сам кадр з буфера камери
+        esp_http_client_write(global_tg_client, (const char *)fb->buf, fb->len);
+        // 3. Закриваємо multipart запит
+        esp_http_client_write(global_tg_client, body_end, body_end_len);
+
+        // Очікуємо відповідь сервера
+        int status_code = esp_http_client_fetch_headers(global_tg_client);
+        if (status_code >= 200 && status_code < 300) {
+            ESP_LOGI(TAG, "Фото успішно надіслано в Telegram! Код: %d", status_code);
+            err = ESP_OK;
+        } else {
+            ESP_LOGE(TAG, "Помилка Telegram API. Код відповіді: %d", status_code);
+            err = ESP_FAIL;
+        }
+    } else {
+        ESP_LOGE(TAG, "Не вдалося відкрити HTTPS з'єднання: %s", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(global_tg_client);
+    return err;
+}
+
+
 
 /* 04082026 1517*/
-bool send_telegram_photo(const uint8_t *buf, size_t len) {
+/* bool send_telegram_photo(const uint8_t *buf, size_t len) {
     bool is_success = false;
     ESP_LOGE("TG", "Нsend_telegram_photo для відправки кадру!");
     if (buf == NULL || len == 0) return is_success;
@@ -571,7 +632,7 @@ bool send_telegram_photo(const uint8_t *buf, size_t len) {
         my_response.buffer_len = 0;
     }
     return is_success;
-}
+} */
 
 
 /**
@@ -706,7 +767,15 @@ void telegram_queue_task(void *pvParameters) {
 #ifdef Camera                
                 if (xSemaphoreTake(tg_http_mutex, portMAX_DELAY) == pdTRUE) {          
                     camera_fb_t *fb = NULL;
-
+                    //Зиіна відбулась 17082026 з викоритсання гетеров
+                    // Захоплюємо кадр
+                    if (get_camera_capture(&fb) == ESP_OK) {
+                        // 3. Відправляємо в Telegram
+                        send_photo_to_telegram(fb);
+                        // ОБОВ'ЯЗКОВО повертаємо буфер драйверу
+                        clear_camera_buffer(&fb);
+                    }
+                    /*      
                     // 2. Робимо фотку прямо в локальний вказівник
                     // Передаємо адресу вказівника через оператор &
                     esp_err_t err = get_camera_capture(&fb);
@@ -715,7 +784,7 @@ void telegram_queue_task(void *pvParameters) {
                         // Доступ до даних: my_frame->buf, my_frame->len
                         // Відправляємо фото в Telegram
                         ESP_LOGI(TAG_TG, "Відправка фото...");
-
+                        
                         bool success = send_telegram_photo(fb->buf, fb->len);
 
                         if (!success) {
@@ -733,7 +802,7 @@ void telegram_queue_task(void *pvParameters) {
                         ESP_LOGE(TAG_TG, "Помилка зйомки фото: %d", err);  
                     }
                      // Обов'язково ВІДПУСКАЄМО м'ютекс одразу після завершення запиту,
-                    // щоб таска з фото могла його перехопити
+                    // щоб таска з фото могла його перехопити */
                     xSemaphoreGive(tg_http_mutex);
                 }
 #endif

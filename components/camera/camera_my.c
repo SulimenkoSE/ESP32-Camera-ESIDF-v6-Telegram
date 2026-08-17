@@ -94,6 +94,9 @@ static camera_config_t camera_config = {
 static stored_frame_t video_buffer[MAX_FRAMES];
 static int frame_count = 0;
 
+// Хендл для захисту камери
+SemaphoreHandle_t camera_mutex = NULL;
+
 /* #define MAX_VIDEO_SIZE (3 * 1024 * 1024) // 3 Мегабайти під відео в PSRAM
 uint8_t *video_buffer = NULL;
 size_t current_video_len = 0;
@@ -122,6 +125,12 @@ void init_camera_power_pin(void)
 
 esp_err_t camera_init(void)
 {
+    // Створюємо м'ютекс перед запуском задач камери
+    camera_mutex = xSemaphoreCreateMutex();
+    if (camera_mutex == NULL) {
+        ESP_LOGE(TAG, "Не вдалося створити м'ютекс для камери!");
+    }
+
     // power up the camera if PWDN pin is defined
     init_camera_power_pin();
 
@@ -141,7 +150,7 @@ esp_err_t camera_init(void)
     return ESP_OK;
 }
 
-esp_err_t camera_capture(void)
+/* esp_err_t camera_capture(void)
 {
     // acquire a frame
     camera_fb_t *fb = esp_camera_fb_get();
@@ -156,7 +165,8 @@ esp_err_t camera_capture(void)
     // return the frame buffer back to the driver for reuse
     esp_camera_fb_return(fb);
     return ESP_OK;
-}
+} */
+
 
 esp_err_t get_camera_capture(camera_fb_t **fb) {
     if (fb == NULL) {
@@ -164,11 +174,24 @@ esp_err_t get_camera_capture(camera_fb_t **fb) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Захоплення кадру з матриці
+    if (camera_mutex == NULL) {
+        ESP_LOGE(TAG, "М'ютекс камери не ініціалізовано");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Чекаємо, поки камера звільниться (максимум 6 секунд)
+    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(6000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Таймаут: камера зайнята іншою задачею!");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    // Захоплення кадру з матриці (тепер це безпечно)
     *fb = esp_camera_fb_get();
     
     if (!(*fb)) {
         ESP_LOGE(TAG, "Не вдалося захопити кадр");
+        // Якщо кадр не взяли, ОБО В'ЯЗКОВО відпускаємо м'ютекс відразу
+        xSemaphoreGive(camera_mutex);
         return ESP_FAIL;
     }
 
@@ -176,8 +199,26 @@ esp_err_t get_camera_capture(camera_fb_t **fb) {
     return ESP_OK;
 }
 
+// Функція безпечного очищення пам'яті відео буфера
+void clear_camera_buffer(camera_fb_t **fb) {
+    if (fb == NULL || *fb == NULL) {
+        ESP_LOGW(TAG, "Буфер кадру вже порожній або NULL");
+        return;
+    }
+    // Передаємо саме вказівник на структуру, а не на вказівник
+    esp_camera_fb_return(*fb);
+    *fb = NULL; // Безпека: запобігає Use-After-Free
+
+    // ВІДПУСКАЄМО М'ЮТЕКС. Тепер інша задача може викликати get_camera_capture
+    if (camera_mutex != NULL) {
+        xSemaphoreGive(camera_mutex);
+    }
+}
+
+/**********************Video********************************************/
 // Реалізація гетерів для іншого файлу
 stored_frame_t* get_video_buffer(void) {
+    record_mjpeg_to_ram();
     return video_buffer;
 }
 
@@ -195,6 +236,8 @@ void clear_video_buffer(void) {
         video_buffer[i].len = 0;
     }
     frame_count = 0;
+    // ОБО В'ЯЗКОВО відпускаємо м'ютекс відразу
+    xSemaphoreGive(camera_mutex);
     ESP_LOGI(TAG, "Буфер відео повністю очищено та звільнено.");
 }
 
@@ -204,6 +247,17 @@ void record_mjpeg_to_ram(void) {
     clear_video_buffer(); 
     frame_count = 0;
 
+    if (camera_mutex == NULL) {
+        ESP_LOGE(TAG, "М'ютекс камери не ініціалізовано");
+        return;
+    }
+
+    // Чекаємо, поки камера звільниться (максимум 5 секунд)
+    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Таймаут: камера зайнята іншою задачею!");
+        return;
+    }
+    
     ESP_LOGI(TAG, "Початок запису відео...");    
     while (frame_count < MAX_FRAMES) {
         camera_fb_t * fb = esp_camera_fb_get();
@@ -227,9 +281,10 @@ void record_mjpeg_to_ram(void) {
         esp_camera_fb_return(fb);
         vTaskDelay(pdMS_TO_TICKS(120)); // Затримка для ~8 FPS
     }
+    
     ESP_LOGI(TAG, "Записано кадрів: %d", frame_count);
 }
-
+/**********************Video********************************************/
 
 #if CONFIG_REMOTE_IS_VARIABLE_NAME
 void time_sync_notification_cb(struct timeval *tv)

@@ -26,6 +26,7 @@ extern "C"
     stored_frame_t* get_video_buffer(void);
     int get_video_frame_count(void);
 
+    void clear_camera_buffer(camera_fb_t **fb);
 #ifdef __cplusplus
 }
 #endif
