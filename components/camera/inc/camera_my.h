@@ -10,23 +10,17 @@ extern "C"
 
     // Структура для зберігання кадрів у PSRAM
     typedef struct {
-        uint8_t* buf;
-        size_t len;
+        uint8_t* buf;   // Вказівник на початок кадру всередині великого буфера
+        size_t len;     // Довжина цього конкретного кадру
     } stored_frame_t;
 
     esp_err_t camera_init(void);
-    //void take_photo_and_send_to_telegram(void);
-    esp_err_t get_camera_capture(camera_fb_t **fb);
-
-    // Оголошення функцій, які будуть доступні між файлами
-    void record_mjpeg_to_ram(void);
-    void clear_video_buffer(void);
 
     // Функції-гетери для отримання доступу до даних в іншому файлі
-    stored_frame_t* get_video_buffer(void);
+    uint8_t* get_video_frame(int index, uint32_t *out_len);
     int get_video_frame_count(void);
+    void clear_video_buffer(void); 
 
-    void clear_camera_buffer(camera_fb_t **fb);
 #ifdef __cplusplus
 }
 #endif

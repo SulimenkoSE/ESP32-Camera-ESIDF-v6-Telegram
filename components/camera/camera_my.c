@@ -91,24 +91,31 @@ static camera_config_t camera_config = {
 };
 
 #define MAX_FRAMES 40 // ~4-5 секунд при 8 FPS
-static stored_frame_t video_buffer[MAX_FRAMES];
+#define MAX_VIDEO_SIZE (3 * 1024 * 1024) // 3 МБ під суцільний блок
+
+static const char *TAG = "Camera";
+
+// Глобальні змінні модуля
+static uint8_t *video_buffer = NULL;
+static stored_frame_t frame_meta[MAX_FRAMES];
 static int frame_count = 0;
+static uint32_t current_offset = 0;
 
 // Хендл для захисту камери
 SemaphoreHandle_t camera_mutex = NULL;
 
-/* #define MAX_VIDEO_SIZE (3 * 1024 * 1024) // 3 Мегабайти під відео в PSRAM
-uint8_t *video_buffer = NULL;
-size_t current_video_len = 0;
-
-void init_video_buffer() {
+// Ініціалізація: викликається один раз при старті системи
+void init_video_buffer(void) {
     video_buffer = (uint8_t *)heap_caps_malloc(MAX_VIDEO_SIZE, MALLOC_CAP_SPIRAM);
     if (video_buffer == NULL) {
-        ESP_LOGE("BUFF", "Не вдалося виділити пам'ять у PSRAM!");
+        ESP_LOGE(TAG, "КРИТИЧНО: Не вдалося виділити 3MB у PSRAM!");
+        return;
     }
-} */
+    memset(frame_meta, 0, sizeof(frame_meta));
+    ESP_LOGI(TAG, "Буфер 3MB у PSRAM успішно ініціалізовано.");
+}
 
-static const char *TAG = "Camera";
+
 
 void init_camera_power_pin(void)
 {
@@ -130,7 +137,10 @@ esp_err_t camera_init(void)
     if (camera_mutex == NULL) {
         ESP_LOGE(TAG, "Не вдалося створити м'ютекс для камери!");
     }
-
+    
+    // Ініціалізація: викликається один раз при старті системи
+    init_video_buffer();
+    
     // power up the camera if PWDN pin is defined
     init_camera_power_pin();
 
@@ -142,149 +152,124 @@ esp_err_t camera_init(void)
         return err;
     }
     ESP_LOGI(TAG, "Камеру успішно ініціалізовано в PSRAM!");
+    //Поворот зображення
     sensor_t *s = esp_camera_sensor_get();
     if (s != NULL) {
         s->set_vflip(s, 1);
         s->set_hmirror(s, 0);
     }
-    return ESP_OK;
-}
 
-/* esp_err_t camera_capture(void)
-{
-    // acquire a frame
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb)
-    {
-        ESP_LOGE(TAG, "Не вдалося захопити кадр");
-        return ESP_FAIL;
-    }
-    // replace this with your own function
-    // process_image(fb->width, fb->height, fb->format, fb->buf, fb->len);
-    ESP_LOGI(TAG, "Кадр отримано! Розмір файлу: %zu байт", fb->len);
-    // return the frame buffer back to the driver for reuse
-    esp_camera_fb_return(fb);
-    return ESP_OK;
-} */
-
-
-esp_err_t get_camera_capture(camera_fb_t **fb) {
-    if (fb == NULL) {
-        ESP_LOGE(TAG, "Передано нульовий вказівник для буфера");
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    if (camera_mutex == NULL) {
-        ESP_LOGE(TAG, "М'ютекс камери не ініціалізовано");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    // Чекаємо, поки камера звільниться (максимум 6 секунд)
-    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(6000)) != pdTRUE) {
-        ESP_LOGE(TAG, "Таймаут: камера зайнята іншою задачею!");
-        return ESP_ERR_TIMEOUT;
-    }
-
-    // Захоплення кадру з матриці (тепер це безпечно)
-    *fb = esp_camera_fb_get();
     
-    if (!(*fb)) {
-        ESP_LOGE(TAG, "Не вдалося захопити кадр");
-        // Якщо кадр не взяли, ОБО В'ЯЗКОВО відпускаємо м'ютекс відразу
-        xSemaphoreGive(camera_mutex);
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "Кадр успішно отримано. Розмір: %u байт", (*fb)->len);
     return ESP_OK;
 }
 
-// Функція безпечного очищення пам'яті відео буфера
-void clear_camera_buffer(camera_fb_t **fb) {
-    if (fb == NULL || *fb == NULL) {
-        ESP_LOGW(TAG, "Буфер кадру вже порожній або NULL");
-        return;
-    }
-    // Передаємо саме вказівник на структуру, а не на вказівник
-    esp_camera_fb_return(*fb);
-    *fb = NULL; // Безпека: запобігає Use-After-Free
-
-    // ВІДПУСКАЄМО М'ЮТЕКС. Тепер інша задача може викликати get_camera_capture
-    if (camera_mutex != NULL) {
-        xSemaphoreGive(camera_mutex);
-    }
+// Очищення: просто скидає покажчики, ЖОДНОГО free() чи фрагментації!
+void clear_video_buffer(void) {
+    frame_count = 0;
+    current_offset = 0;
+    // Оскільки ми не звільняємо пам'ять, memset робити не обов'язково (економить CPU)
+    ESP_LOGI(TAG, "Буфер відео скинуто у початковий стан.");
 }
 
-/**********************Video********************************************/
-// Реалізація гетерів для іншого файлу
-stored_frame_t* get_video_buffer(void) {
-    record_mjpeg_to_ram();
-    return video_buffer;
-}
-
+// Гетери для використання в інших файлах
 int get_video_frame_count(void) {
     return frame_count;
 }
 
-// Функція безпечного очищення пам'яті відео буфера
-void clear_video_buffer(void) {
-    for (int i = 0; i < frame_count; i++) {
-        if (video_buffer[i].buf != NULL) {
-            free(video_buffer[i].buf);
-            video_buffer[i].buf = NULL;
-        }
-        video_buffer[i].len = 0;
+// Повертає вказівник на кадр за індексом та записує його довжину
+uint8_t* get_video_frame(int index, uint32_t *out_len) {
+    if (index < 0 || index >= frame_count || out_len == NULL) {
+        return NULL;
     }
-    frame_count = 0;
-    // ОБО В'ЯЗКОВО відпускаємо м'ютекс відразу
-    xSemaphoreGive(camera_mutex);
-    ESP_LOGI(TAG, "Буфер відео повністю очищено та звільнено.");
+    *out_len = frame_meta[index].len;
+    return frame_meta[index].buf;
 }
 
-// 1. Запис 5 секунд відео в пам'ять
+// 1. ЗАПИС ВІДЕО
 void record_mjpeg_to_ram(void) {
-    // Спочатку очищаємо старий буфер, якщо він не був очищений
-    clear_video_buffer(); 
-    frame_count = 0;
+    if (camera_mutex == NULL || video_buffer == NULL) return;
 
-    if (camera_mutex == NULL) {
-        ESP_LOGE(TAG, "М'ютекс камери не ініціалізовано");
-        return;
-    }
-
-    // Чекаємо, поки камера звільниться (максимум 5 секунд)
     if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
-        ESP_LOGE(TAG, "Таймаут: камера зайнята іншою задачею!");
+        ESP_LOGE(TAG, "Таймаут відео: камера зайнята!");
         return;
     }
-    
+
+    clear_video_buffer(); 
     ESP_LOGI(TAG, "Початок запису відео...");    
+
     while (frame_count < MAX_FRAMES) {
         camera_fb_t * fb = esp_camera_fb_get();
         if (!fb) {
-            ESP_LOGE(TAG, "Помилка захоплення кадру");
+            ESP_LOGE(TAG, "Помилка захоплення кадру відео");
+            vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
 
-        // Виділяємо пам'ять у PSRAM під поточний кадр
-        video_buffer[frame_count].buf = (uint8_t*)heap_caps_malloc(fb->len, MALLOC_CAP_SPIRAM);
-        if (video_buffer[frame_count].buf) {
-            memcpy(video_buffer[frame_count].buf, fb->buf, fb->len);
-            video_buffer[frame_count].len = fb->len;
-            frame_count++;
-        } else {
-            ESP_LOGE(TAG, "Брак PSRAM для кадру %d", frame_count);
+        // Перевіряємо, чи поміститься кадр у залишок буфера
+        if (current_offset + fb->len > MAX_VIDEO_SIZE) {
+            ESP_LOGW(TAG, "Буфер заповнено раніше ліміту кадрів (%d байт залишилось)", MAX_VIDEO_SIZE - current_offset);
             esp_camera_fb_return(fb);
             break;
         }
+
+        // Копіюємо прямо у виділений блок PSRAM без malloc!
+        memcpy(&video_buffer[current_offset], fb->buf, fb->len);
+
+        // Запам'ятовуємо метадані кадру
+        frame_meta[frame_count].buf = &video_buffer[current_offset];
+        frame_meta[frame_count].len = fb->len;
+
+        current_offset += fb->len;
+        frame_count++;
         
         esp_camera_fb_return(fb);
-        vTaskDelay(pdMS_TO_TICKS(120)); // Затримка для ~8 FPS
+        vTaskDelay(pdMS_TO_TICKS(120)); // ~8 FPS
     }
     
-    ESP_LOGI(TAG, "Записано кадрів: %d", frame_count);
+    xSemaphoreGive(camera_mutex);
+    ESP_LOGI(TAG, "Запис відео завершено. Кадрів: %d, Використано пам'яті: %d КБ", frame_count, current_offset / 1024);
 }
-/**********************Video********************************************/
+
+// 2. ЗЙОМКА ФОТО (Ваш початковий запит)
+bool take_photo_to_ram(void) {
+    if (camera_mutex == NULL || video_buffer == NULL) return false;
+
+    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Таймаут фото: камера зайнята!");
+        return false;
+    }
+
+    clear_video_buffer(); // Скидаємо індекси на 0
+    ESP_LOGI(TAG, "Зйомка фото у буфер...");
+
+    camera_fb_t * fb = esp_camera_fb_get();
+    if (!fb) {
+        ESP_LOGE(TAG, "Помилка захоплення кадру фото");
+        xSemaphoreGive(camera_mutex);
+        return false;
+    }
+
+    if (fb->len > MAX_VIDEO_SIZE) {
+        ESP_LOGE(TAG, "Критично: Розмір фото (%d) перевищує весь буфер (%d)!", fb->len, MAX_VIDEO_SIZE);
+        esp_camera_fb_return(fb);
+        xSemaphoreGive(camera_mutex);
+        return false;
+    }
+
+    // Фото завжди лягає в початок буфера (offset = 0)
+    memcpy(&video_buffer[0], fb->buf, fb->len);
+
+    frame_meta[0].buf = &video_buffer[0];
+    frame_meta[0].len = fb->len;
+    
+    frame_count = 1; // Маркер того, що в нас лежить 1 фото, а не відео
+    current_offset = fb->len;
+
+    esp_camera_fb_return(fb);
+    xSemaphoreGive(camera_mutex);
+    ESP_LOGI(TAG, "Фото збережено. Розмір: %d байт", fb->len);
+    return true;
+}
 
 #if CONFIG_REMOTE_IS_VARIABLE_NAME
 void time_sync_notification_cb(struct timeval *tv)

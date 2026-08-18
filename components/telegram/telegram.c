@@ -478,9 +478,7 @@ void send_telegram_message(const char* text) {
  * @brief Функція для відправки фото в Telegram
  */
 
- esp_err_t send_photo_to_telegram(camera_fb_t *fb) {
-    
-    if (!fb) return ESP_ERR_INVALID_ARG;
+ esp_err_t send_photo_to_telegram(const uint8_t *buf, size_t len) {
 
     // Перевіряємо, чи клієнт ініціалізований
     if (global_tg_client == NULL) {
@@ -506,7 +504,7 @@ void send_telegram_message(const char* text) {
     int body_end_len = snprintf(body_end, sizeof(body_end), "\r\n--%s--\r\n", boundary);
 
     // Рахуємо повний об'єм даних, який буде відправлено
-    int total_length = body_start_len + fb->len + body_end_len;
+    int total_length = body_start_len + len + body_end_len;
     char content_length_str[16];
     snprintf(content_length_str, sizeof(content_length_str), "%d", total_length);
     esp_http_client_set_header(global_tg_client, "Content-Length", content_length_str);
@@ -517,7 +515,7 @@ void send_telegram_message(const char* text) {
         // 1. Відправляємо текстову частину
         esp_http_client_write(global_tg_client, body_start, body_start_len);
         // 2. Відправляємо сам кадр з буфера камери
-        esp_http_client_write(global_tg_client, (const char *)fb->buf, fb->len);
+        esp_http_client_write(global_tg_client, (const char *)buf, len);
         // 3. Закриваємо multipart запит
         esp_http_client_write(global_tg_client, body_end, body_end_len);
 
@@ -646,14 +644,26 @@ void send_video_to_telegram(void){ //(uint8_t* avi_data, size_t avi_len) { //con
     
     // Отримуємо доступ до даних з сусіднього файлу через гетери
     int total_frames = get_video_frame_count();
-    stored_frame_t* buffer = get_video_buffer();
 
     if (total_frames == 0) {
-        ESP_LOGW(TAG, "Немає кадрів для відправки");
+        ESP_LOGW(TAG, "Немає кадрів для відправкиабо це поодиноке фото (кадрів: %d)", total_frames);
         return;
     }
     ESP_LOGE("TG", "Send_telegram_video для відправки кадру!");
     
+    ESP_LOGI("TG", "Підготовка до відправки відео з %d кадрів у Telegram...", total_frames);
+
+    // Оскільки ми використовуємо суцільний буфер, 
+    // усі кадри вже лежать один за одним у пам'яті!
+    // Перший кадр починається там, де вказує get_video_frame(0, ...)
+    uint32_t first_frame_len = 0;
+    uint8_t* video_start_ptr = get_video_frame(0, &first_frame_len);
+
+    if (video_start_ptr == NULL) {
+        ESP_LOGE("TG", "Помилка: Не вдалося отримати доступ до початку буфера.");
+        return;
+    }
+
     // Перевіряємо, чи клієнт ініціалізований
     if (global_tg_client == NULL) {
         if (!init_telegram_client()) return;// is_success;
@@ -675,7 +685,10 @@ void send_video_to_telegram(void){ //(uint8_t* avi_data, size_t avi_len) { //con
     // Розрахунок загального розміру контенту (всі кадри разом)
     size_t total_video_size = 0;
     for (int i = 0; i < total_frames; i++) {
-        total_video_size += buffer[i].len;
+        uint32_t frame_len = 0;
+        if (get_video_frame(i, &frame_len) != NULL) {
+            total_video_size += frame_len;
+        }
     }
      char body_start[512];
     int start_len = snprintf(body_start, sizeof(body_start),
@@ -702,10 +715,8 @@ void send_video_to_telegram(void){ //(uint8_t* avi_data, size_t avi_len) { //con
     // Надсилаємо текстові поля та заголовок файлу стартову частину Multipart
     esp_http_client_write(global_tg_client, body_start, start_len);
 
-    // Послідовно викачуємо всі кадри з PSRAM в сокет
-    for (int i = 0; i < total_frames; i++) {
-        esp_http_client_write(global_tg_client, (const char*)buffer[i].buf, buffer[i].len);
-    }
+    // Увесь суцільний буфер відео за один раз (Супер-швидко!)
+    esp_http_client_write(global_tg_client, (const char*)video_start_ptr, total_video_size);
 
     // Закриваємо multipart
     esp_http_client_write(global_tg_client, body_end, end_len);
@@ -766,7 +777,24 @@ void telegram_queue_task(void *pvParameters) {
                 // Намагаємося захопити м'ютекс перед КОЖНИМ запитом getUpdates
 #ifdef Camera                
                 if (xSemaphoreTake(tg_http_mutex, portMAX_DELAY) == pdTRUE) {          
-                    camera_fb_t *fb = NULL;
+                    int count = get_video_frame_count();
+    
+                    if (count == 0) {
+                        printf("Буфер порожній.\n");
+                        return;
+                    }
+
+                    // ОБРОБКА ОДНОГО ФОТО
+                    uint32_t photo_size = 0;
+                    uint8_t* photo_ptr = get_video_frame(0, &photo_size);
+                    
+                    if (photo_ptr != NULL) {
+                        printf("Обробка фото: адреса %p, розмір %ld байт\n", photo_ptr, photo_size);
+                        // Тут ваш код відправки фото: send_jpeg(photo_ptr, photo_size);
+                        send_photo_to_telegram(photo_ptr, photo_size);
+                    }
+
+                    /*camera_fb_t *fb = NULL;
                     //Зиіна відбулась 17082026 з викоритсання гетеров
                     // Захоплюємо кадр
                     if (get_camera_capture(&fb) == ESP_OK) {
@@ -775,7 +803,7 @@ void telegram_queue_task(void *pvParameters) {
                         // ОБОВ'ЯЗКОВО повертаємо буфер драйверу
                         clear_camera_buffer(&fb);
                     }
-                    /*      
+                         
                     // 2. Робимо фотку прямо в локальний вказівник
                     // Передаємо адресу вказівника через оператор &
                     esp_err_t err = get_camera_capture(&fb);
@@ -813,8 +841,7 @@ void telegram_queue_task(void *pvParameters) {
                 // Намагаємося захопити м'ютекс перед КОЖНИМ запитом getUpdates
 #ifdef Camera             
             if (xSemaphoreTake(tg_http_mutex, portMAX_DELAY) == pdTRUE) {
-                 
-                    
+                send_video_to_telegram();                     
                 xSemaphoreGive(tg_http_mutex);
             }
 #endif
